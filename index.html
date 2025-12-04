@@ -142,6 +142,9 @@
       pointer-events:none;
     }
     .overlay a{pointer-events:auto}
+    /* ✅ 닫기 버튼도 클릭되게 */
+    .overlay .closeBtn{ pointer-events:auto; }
+
     .placeholder{
       position:absolute; inset:0;
       display:grid; place-items:center;
@@ -217,6 +220,14 @@
         <button class="primary mini" id="saveBtn">저장</button>
         <button class="danger mini" id="resetBtn">전체 초기화</button>
         <span class="pill" id="savedPill">저장됨</span>
+      </div>
+
+      <!-- ✅ 오버레이 표시 토글 -->
+      <div class="row" style="margin-top:10px">
+        <label style="margin:0; display:flex; gap:8px; align-items:center;">
+          <input id="showOverlay" type="checkbox" style="width:auto" />
+          안내 메시지(오버레이) 표시
+        </label>
       </div>
     </div>
 
@@ -314,7 +325,8 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
         enabled: true
       }]
     }],
-    ui: { sortMode: "custom", search: "" }
+    // ✅ showOverlay 기본 true
+    ui: { sortMode: "custom", search: "", showOverlay: true }
   });
 
   let state = defaultState();
@@ -342,6 +354,8 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
   const $sortMode = $("sortMode");
   const $selectFirstNBtn = $("selectFirstNBtn");
   const $firstN = $("firstN");
+
+  const $showOverlay = $("showOverlay");
 
   const $list = $("list");
   const $grid = $("grid");
@@ -415,7 +429,10 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
     if (!state.groups.find(g => g.id === state.activeGroupId)) {
       state.activeGroupId = state.groups[0]?.id || "default";
     }
-    state.ui = state.ui || { sortMode:"custom", search:"" };
+
+    // ✅ ui 기본값 보정 + showOverlay boolean 보장
+    state.ui = state.ui || { sortMode:"custom", search:"", showOverlay:true };
+    if (typeof state.ui.showOverlay !== "boolean") state.ui.showOverlay = true;
   };
 
   // iframe 재로딩을 위해 src 토글
@@ -445,6 +462,7 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
     $sortMode.value = state.ui.sortMode || "custom";
     $searchBox.value = state.ui.search || "";
     $firstN.value = $firstN.value || "8";
+    $showOverlay.checked = !!state.ui.showOverlay;
 
     document.documentElement.style.setProperty("--cols", String(g.cols));
 
@@ -617,19 +635,45 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
 
         refresh.addEventListener("click", () => refreshIframe(iframe));
 
-        const overlay = document.createElement("div");
-        overlay.className = "overlay";
-        overlay.innerHTML = `<span>안 보이면 임베드 차단/혼합콘텐츠일 수 있어요.</span>`;
-        const link = document.createElement("a");
-        link.className = "link";
-        link.href = item.url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = "새 탭으로 보기";
-        overlay.appendChild(link);
+        // ✅ 오버레이는 "표시" 설정일 때만 생성 + 닫기 버튼 제공(영구 OFF)
+        if (state.ui.showOverlay !== false) {
+          const overlay = document.createElement("div");
+          overlay.className = "overlay";
+          overlay.innerHTML = `<span>안 보이면 임베드 차단/혼합콘텐츠일 수 있어요.</span>`;
 
-        body.appendChild(iframe);
-        body.appendChild(overlay);
+          const actions = document.createElement("div");
+          actions.style.display = "flex";
+          actions.style.gap = "8px";
+          actions.style.alignItems = "center";
+
+          const link = document.createElement("a");
+          link.className = "link";
+          link.href = item.url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "새 탭으로 보기";
+
+          const close = document.createElement("button");
+          close.className = "mini closeBtn";
+          close.textContent = "닫기";
+          close.title = "안내 메시지를 숨깁니다(다음부터도 안 뜸)";
+          close.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            state.ui.showOverlay = false; // ✅ 영구 OFF
+            save();
+          });
+
+          actions.appendChild(link);
+          actions.appendChild(close);
+
+          overlay.appendChild(actions);
+
+          body.appendChild(iframe);
+          body.appendChild(overlay);
+        } else {
+          body.appendChild(iframe);
+        }
       } else {
         refresh.disabled = true;
         refresh.title = "동시재생 제한으로 대기중";
@@ -660,6 +704,12 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
 
   $saveBtn.addEventListener("click", save);
   $resetBtn.addEventListener("click", hardReset);
+
+  // ✅ 토글 이벤트 (오버레이 표시/숨김)
+  $showOverlay.addEventListener("change", () => {
+    state.ui.showOverlay = $showOverlay.checked;
+    save();
+  });
 
   $newGroupBtn.addEventListener("click", () => {
     const name = prompt("새 그룹 이름", "새 그룹");
@@ -702,7 +752,11 @@ https://www.utic.go.kr/jsp/map/cctvStream.jsp?cctvid=..."></textarea>
 
   $refreshAllBtn.addEventListener("click", () => {
     // 현재 로드된 iframe만 새로고침
-    document.querySelectorAll("iframe[data-src]").forEach(refreshIframe);
+    document.querySelectorAll("iframe[data-src]").forEach((iframe) => {
+      const src = iframe.dataset.src;
+      iframe.src = "about:blank";
+      setTimeout(() => { iframe.src = src; }, 60);
+    });
   });
 
   $addBtn.addEventListener("click", () => {
